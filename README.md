@@ -1,71 +1,59 @@
-# palm-guard
+<p align="center"><img src="docs/banner-palm-guard.png" alt="palm-guard" width="100%"></p>
 
-Anti-paume pour écran tactile sous KDE Plasma (Wayland), pensé pour dessiner au stylet dans Xournal++.
+<p align="center"><img src="https://img.shields.io/badge/platform-Linux%20·%20KDE%20Plasma%206-000000?style=flat-square" alt="platform"> <img src="https://img.shields.io/badge/wayland-yes-610089?style=flat-square" alt="wayland"> <img src="https://img.shields.io/badge/python-3-3776ab?style=flat-square" alt="python"> <img src="https://img.shields.io/badge/license-MIT-610089?style=flat-square" alt="license"></p>
 
-Sur mon Lenovo Yoga 7 2-in-1, quand je pose la main sur le bord gauche de l'écran pour écrire, la feuille de Xournal++ se met à défiler. libinput ne fait pas de rejet de paume sur les écrans tactiles, et je ne voulais pas couper le tactile complètement (j'aime bien déplacer la page au doigt). Du coup palm-guard se met entre l'écran et KDE et trie les touches.
+<p align="center"><a href="README.fr.md">🇫🇷 Version française</a></p>
 
-## Ce qu'il fait
+**Palm rejection for touchscreens on KDE Plasma (Wayland)** — made for drawing with a pen in Xournal++.
 
-- **Zone morte à gauche (20 mm)** : une touche qui *commence* dans cette bande est ignorée, mais seulement quand une fenêtre Xournal++ est ouverte. Le reste du temps, tous les bords marchent normalement (fermer une fenêtre au doigt, etc.).
-- **Stylet proche = tactile coupé** : dès que le stylet survole l'écran, les doigts sont ignorés, puis réactivés 0,3 s après qu'il s'éloigne.
-- **Paumes signalées par l'écran** : si le pilote marque une touche comme paume (`MT_TOOL_PALM`), elle est jetée.
-- Un doigt au milieu de l'écran passe comme avant : défilement, zoom, tout marche.
+On my Lenovo Yoga 7 2-in-1, resting my hand on the left edge of the screen while writing would scroll the Xournal++ page. libinput does no palm rejection on touchscreens, and I didn't want to disable touch completely (panning the page with a finger is handy). So palm-guard sits between the touchscreen and KDE and sorts the touches.
 
-Côté batterie c'est neutre : le script dort sur `select()` et ne se réveille que quand on touche l'écran ou qu'on approche le stylet.
+## Features
 
-## Comment ça marche
+- **Left dead zone (20 mm)** — a touch that *starts* there is ignored, but only while a Xournal++ window is open. Everywhere else every edge works normally.
+- **Pen near the screen = touch off** — fingers are ignored while the pen hovers, and come back 0.3 s after it leaves.
+- **Palms flagged by the hardware** (`MT_TOOL_PALM`) are dropped.
+- A finger in the middle of the screen behaves exactly as before: scroll, zoom, everything.
+- **Zero battery cost**: the daemon sleeps on `select()` and only wakes up when you touch the screen or bring the pen close.
 
-```
-écran tactile ──grab──▶ palm-guard.py ──uinput──▶ « Palm Guard Touchscreen » ──▶ KDE
-                             ▲
-                             │ fifo /run/palm-guard.fifo
-                    palm-guard-relay.py ◀── D-Bus ── script KWin (fenêtres Xournal++ ?)
-```
+<p align="center"><img src="docs/palm-guard-test.png" width="760" alt="test mode output"><br><sub>Test mode output: touches near the left edge are blocked while Xournal++ is open</sub></p>
 
-- `palm-guard.py` (service systemd, root) attrape l'écran avec `evdev`, filtre les slots multitouch et renvoie le reste sur un clone virtuel. Pour annuler un doigt déjà parti, il le passe en `MT_TOOL_PALM` avant de le lever, comme ça libinput annule le geste au lieu de faire un clic.
-- Le script KWin (`kwin/palmguard`) regarde si une fenêtre Xournal++ existe et appelle `org.palmguard.SetActive` sur le bus de session.
-- `palm-guard-relay.py` (service utilisateur) reçoit cet appel et l'écrit dans la fifo, parce que le service root n'a pas accès au bus de session.
+## How it works
 
-## Installation
+<p align="center"><img src="docs/palm-guard-schema.png" width="100%" alt="architecture"></p>
 
-Testé sur CachyOS, KDE Plasma 6.8, Lenovo Yoga 7 2-in-1 14ILL10 (Wacom HID 53FD).
+- `palm-guard.py` (root systemd service) grabs the touchscreen with `evdev`, filters multitouch slots and re-emits the rest on a virtual clone (`uinput`). To cancel a finger that was already accepted, it switches it to `MT_TOOL_PALM` before lifting it, so libinput cancels the gesture instead of clicking.
+- A KWin script checks whether a Xournal++ window exists and calls `org.palmguard.SetActive` on the session bus.
+- `palm-guard-relay.py` (user service) receives that call and writes it to a FIFO, because the root service can't reach the session bus.
+
+## Install
 
 ```bash
 git clone https://github.com/glime32/palm-guard
 cd palm-guard
-./install.sh
+./install.sh        # asks for sudo, installs python-evdev + python-gobject on Arch/CachyOS
 ```
 
-Dépendances : `python-evdev`, `python-gobject` (installées par le script sur Arch/CachyOS).
+Uninstall with `./uninstall.sh`. Tested on CachyOS, KDE Plasma 6.8, Lenovo Yoga 7 2-in-1 14ILL10 (Wacom HID 53FD).
 
-Désinstaller : `./uninstall.sh`
+## Settings
 
-## Réglages
+At the top of `palm-guard.py`:
 
-En haut de `palm-guard.py` :
-
-| Variable | Défaut | Rôle |
+| Variable | Default | |
 |---|---|---|
-| `BORD_MM` | gauche 20, autres 0 | largeur des zones mortes en mm |
-| `XOURNAL_SEUL` | `True` | zone morte seulement si Xournal++ est ouvert |
-| `STYLET_BLOQUE` | `True` | couper le tactile quand le stylet est proche |
-| `STYLET_DELAI` | `0.3` | délai (s) avant de réactiver après le stylet |
-| `PAUME_MM` | `0` | bloquer les touches plus larges que ça (0 = off) |
+| `BORD_MM` | left 20, others 0 | width of the dead zones (mm) |
+| `XOURNAL_SEUL` | `True` | dead zone only while Xournal++ is open |
+| `STYLET_BLOQUE` | `True` | disable touch while the pen hovers |
+| `STYLET_DELAI` | `0.3` | delay (s) before touch comes back |
+| `PAUME_MM` | `0` | block touches wider than this (0 = off) |
 
-Après modification : `sudo systemctl restart palm-guard`.
+Then `sudo systemctl restart palm-guard`. To protect another app than Xournal++, change the test in `kwin/palmguard/contents/code/main.js`.
 
-Pour un autre logiciel que Xournal++, changer le test dans `kwin/palmguard/contents/code/main.js`.
-
-## Tester
+## Test mode
 
 ```bash
 sudo systemctl stop palm-guard
-sudo python3 /usr/local/bin/palm-guard.py --test
+sudo python3 /usr/local/bin/palm-guard.py --test   # prints every touch, filters nothing
+sudo systemctl start palm-guard
 ```
-
-Le mode test affiche chaque touche avec sa position et si elle aurait été bloquée, **sans rien filtrer**. Penser à relancer le service après : `sudo systemctl start palm-guard`.
-
-## Limites
-
-- La distance de survol du stylet dépend du matériel, aucun logiciel ne peut l'augmenter.
-- Seul le premier écran tactile trouvé est géré.
