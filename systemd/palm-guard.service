@@ -1,0 +1,12 @@
+[Unit]
+Description=Palm Guard - anti-paume tactile
+StartLimitIntervalSec=0
+
+[Service]
+ExecStartPre=-/usr/bin/modprobe uinput
+ExecStart=/usr/bin/python3 /usr/local/bin/palm-guard.py
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
