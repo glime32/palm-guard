@@ -3,7 +3,7 @@ Description=Palm Guard - relais Xournal++
 StartLimitIntervalSec=0
 
 [Service]
-ExecStart=/usr/bin/python3 /usr/local/bin/palm-guard-relay.py
+ExecStart=/usr/local/bin/palm-guard-relay
 Restart=always
 RestartSec=2
 

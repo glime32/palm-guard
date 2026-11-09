@@ -4,7 +4,7 @@ StartLimitIntervalSec=0
 
 [Service]
 ExecStartPre=-/usr/bin/modprobe uinput
-ExecStart=/usr/bin/python3 /usr/local/bin/palm-guard.py
+ExecStart=/usr/local/bin/palm-guard
 Restart=always
 RestartSec=2
 

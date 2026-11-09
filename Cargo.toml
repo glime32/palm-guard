@@ -1,0 +1,17 @@
+[package]
+name = "palm-guard"
+version = "2.0.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+libc = "0.2"
+dbus = "0.9"
+dbus-crossroads = "0.5"
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,6 +1,6 @@
 <p align="center"><img src="docs/banner-palm-guard.png" alt="palm-guard" width="100%"></p>
 
-<p align="center"><img src="https://img.shields.io/badge/platform-Linux%20·%20KDE%20Plasma%206-000000?style=flat-square" alt="platform"> <img src="https://img.shields.io/badge/wayland-yes-610089?style=flat-square" alt="wayland"> <img src="https://img.shields.io/badge/python-3-3776ab?style=flat-square" alt="python"> <img src="https://img.shields.io/badge/license-MIT-610089?style=flat-square" alt="license"></p>
+<p align="center"><img src="https://img.shields.io/badge/platform-Linux%20·%20KDE%20Plasma%206-000000?style=flat-square" alt="platform"> <img src="https://img.shields.io/badge/wayland-yes-610089?style=flat-square" alt="wayland"> <img src="https://img.shields.io/badge/rust-2021-dea584?style=flat-square" alt="rust"> <img src="https://img.shields.io/badge/license-MIT-610089?style=flat-square" alt="license"></p>
 
 <p align="center"><a href="README.md">🇬🇧 English version</a></p>
 
@@ -15,20 +15,20 @@ Sur mon Lenovo Yoga 7 2-in-1, quand je pose la main sur le bord gauche de l'écr
 - **Paumes signalées par l'écran** : si le pilote marque une touche comme paume (`MT_TOOL_PALM`), elle est jetée.
 - Un doigt au milieu de l'écran passe comme avant : défilement, zoom, tout marche.
 
-Côté batterie c'est neutre : le script dort sur `select()` et ne se réveille que quand on touche l'écran ou qu'on approche le stylet.
+Côté batterie c'est neutre : le démon (en Rust, ~2,6 Mo de RAM) dort sur `poll()`, sans aucun minuteur, et ne se réveille que quand on touche l'écran ou qu'on approche le stylet.
 
 ## Comment ça marche
 
 ```
-écran tactile ──grab──▶ palm-guard.py ──uinput──▶ « Palm Guard Touchscreen » ──▶ KDE
-                             ▲
-                             │ fifo /run/palm-guard.fifo
-                    palm-guard-relay.py ◀── D-Bus ── script KWin (fenêtres Xournal++ ?)
+écran tactile ──grab──▶ palm-guard ──uinput──▶ « Palm Guard Touchscreen » ──▶ KDE
+                            ▲
+                            │ fifo /run/palm-guard.fifo
+                    palm-guard-relay ◀── D-Bus ── script KWin (fenêtres Xournal++ ?)
 ```
 
-- `palm-guard.py` (service systemd, root) attrape l'écran avec `evdev`, filtre les slots multitouch et renvoie le reste sur un clone virtuel. Pour annuler un doigt déjà parti, il le passe en `MT_TOOL_PALM` avant de le lever, comme ça libinput annule le geste au lieu de faire un clic.
+- `palm-guard` (service systemd, root) attrape l'écran directement par les ioctl evdev, filtre les slots multitouch et renvoie le reste sur un clone virtuel. Pour annuler un doigt déjà parti, il le passe en `MT_TOOL_PALM` avant de le lever, comme ça libinput annule le geste au lieu de faire un clic.
 - Le script KWin (`kwin/palmguard`) regarde si une fenêtre Xournal++ existe et appelle `org.palmguard.SetActive` sur le bus de session.
-- `palm-guard-relay.py` (service utilisateur) reçoit cet appel et l'écrit dans la fifo, parce que le service root n'a pas accès au bus de session.
+- `palm-guard-relay` (service utilisateur) reçoit cet appel et l'écrit dans la fifo, parce que le service root n'a pas accès au bus de session.
 
 ## Installation
 
@@ -40,23 +40,24 @@ cd palm-guard
 ./install.sh
 ```
 
-Dépendances : `python-evdev`, `python-gobject` (installées par le script sur Arch/CachyOS).
+Il faut Rust (`sudo pacman -S rust`) : le script compile les deux binaires avec `cargo build --release` et les met dans `/usr/local/bin`. Aucune dépendance Python. Si une ancienne version Python est installée, il la remplace.
 
 Désinstaller : `./uninstall.sh`
 
 ## Réglages
 
-En haut de `palm-guard.py` :
+En haut de `src/filtre.rs` :
 
-| Variable | Défaut | Rôle |
+| Constante | Défaut | Rôle |
 |---|---|---|
-| `BORD_MM` | gauche 20, autres 0 | largeur des zones mortes en mm |
-| `XOURNAL_SEUL` | `True` | zone morte seulement si Xournal++ est ouvert |
-| `STYLET_BLOQUE` | `True` | couper le tactile quand le stylet est proche |
-| `STYLET_DELAI` | `0.3` | délai (s) avant de réactiver après le stylet |
-| `PAUME_MM` | `0` | bloquer les touches plus larges que ça (0 = off) |
+| `EDGE_LEFT_MM` | `20.0` | largeur de la zone morte à gauche, en mm |
+| `XOURNAL_ONLY` | `true` | zone morte seulement si Xournal++ est ouvert |
+| `PEN_BLOCKS` | `true` | couper le tactile quand le stylet est proche |
+| `PEN_DELAY` | `0.3` | délai (s) avant de réactiver après le stylet |
+| `PALM_MM` | `0.0` | bloquer les touches plus larges que ça (0 = off) |
+| `SCREEN_MM` | `(301.5, 188.5)` | taille de l'écran, si le pilote ne donne pas la résolution |
 
-Après modification : `sudo systemctl restart palm-guard`.
+Après modification : relancer `./install.sh` (recompile et redémarre le service).
 
 Pour un autre logiciel que Xournal++, changer le test dans `kwin/palmguard/contents/code/main.js`.
 
@@ -64,10 +65,12 @@ Pour un autre logiciel que Xournal++, changer le test dans `kwin/palmguard/conte
 
 ```bash
 sudo systemctl stop palm-guard
-sudo python3 /usr/local/bin/palm-guard.py --test
+sudo palm-guard --test
 ```
 
 Le mode test affiche chaque touche avec sa position et si elle aurait été bloquée, **sans rien filtrer**. Penser à relancer le service après : `sudo systemctl start palm-guard`.
+
+Pour comparer deux versions du filtre sur les mêmes gestes, `palm-guard --rejouer FICHIER` rejoue un enregistrement d'évènements et affiche ce qui serait envoyé à KDE (format décrit en bas de `src/main.rs`). C'est comme ça que la version Rust a été vérifiée identique à l'ancienne version Python, sur environ 180 000 évènements.
 
 ## Limites
 
